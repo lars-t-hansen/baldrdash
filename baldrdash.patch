@@ -2,9 +2,9 @@
 # User Lars T Hansen <lhansen@mozilla.com>
 # Date 1499384022 25200
 #      Thu Jul 06 16:33:42 2017 -0700
-# Node ID 6828a566b7f0f67878f1bec8cae5b66a22c1de78
-# Parent  7a401b1e5f9854a1b49f567374d380e3e0e1100a
-Cretonne compilation framework
+# Node ID 786fd91b5296d92f194ba8db64e44d39ec857525
+# Parent  5f7d4b62f6e497b3aa10f8c1171e86be52e54cf9
+Baldrdash compilation framework
 
 diff --git a/.hgignore b/.hgignore
 --- a/.hgignore
