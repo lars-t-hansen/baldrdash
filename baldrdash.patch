@@ -2,7 +2,7 @@
 # User Lars T Hansen <lhansen@mozilla.com>
 # Date 1499384022 25200
 #      Thu Jul 06 16:33:42 2017 -0700
-# Node ID ccb568080402d36e92634dd9173eebd1aaed4f0c
+# Node ID 6828a566b7f0f67878f1bec8cae5b66a22c1de78
 # Parent  7a401b1e5f9854a1b49f567374d380e3e0e1100a
 Cretonne compilation framework
 
@@ -27,11 +27,29 @@ diff --git a/.hgignore b/.hgignore
  # SpiderMonkey test result logs
  ^js/src/tests/results-.*\.(html|txt)$
  ^js/src/devtools/rootAnalysis/t/out
+diff --git a/js/moz.configure b/js/moz.configure
+--- a/js/moz.configure
++++ b/js/moz.configure
+@@ -250,8 +250,14 @@ with only_when('--enable-compile-environ
+         if fuzzing and not afl:
+             return True
+ 
+     set_config('FUZZING', enable_fuzzing)
+     set_define('FUZZING', enable_fuzzing)
+ 
+     set_config('LIBFUZZER', enable_libfuzzer)
+     set_define('LIBFUZZER', enable_libfuzzer)
++
++# Rust
++# ==============================================================
++include('../build/moz.configure/rust.configure',
++        when='--enable-compile-environment')
++
 diff --git a/js/src/baldrdash/Cargo.toml b/js/src/baldrdash/Cargo.toml
 new file mode 100644
 --- /dev/null
 +++ b/js/src/baldrdash/Cargo.toml
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,29 @@
 +[package]
 +name = "baldrdash"
 +version = "0.1.0"
@@ -40,6 +58,25 @@ new file mode 100644
 +[lib]
 +name = "baldrdash"
 +crate-type = ["staticlib"]
++
++[profile.release]
++opt-level = 3
++debug = false
++rpath = false
++lto = false
++debug-assertions = false
++# codegen-units ignored with lto=true
++codegen-units = 4
++panic = "abort"
++
++[profile.dev]
++opt-level = 0
++debug = true
++rpath = false
++lto = false
++debug-assertions = true
++codegen-units = 4
++panic = "abort"
 +
 +[dependencies]
 diff --git a/js/src/baldrdash/Makefile b/js/src/baldrdash/Makefile
@@ -227,7 +264,7 @@ new file mode 100644
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 +
-+Library('baldrdash')
++RustLibrary('baldrdash')
 diff --git a/js/src/baldrdash/src/baldrapi.rs b/js/src/baldrdash/src/baldrapi.rs
 new file mode 100644
 --- /dev/null
@@ -664,6 +701,58 @@ diff --git a/js/src/build/moz.build b/js/src/build/moz.build
      OS_LIBS += [
          'm',
      ]
+diff --git a/js/src/gdb/moz.build b/js/src/gdb/moz.build
+--- a/js/src/gdb/moz.build
++++ b/js/src/gdb/moz.build
+@@ -26,19 +26,21 @@ UNIFIED_SOURCES += [
+ DEFINES['EXPORT_JS_API'] = True
+ 
+ LOCAL_INCLUDES += [
+     '!..',
+     '..',
+ ]
+ 
+ USE_LIBS += [
+-    'static:js',
++    'static:js'
+ ]
+ 
++USE_LIBS += [ 'baldrdash' ]
++
+ if CONFIG['ENABLE_INTL_API'] and CONFIG['MOZ_ICU_DATA_ARCHIVE']:
+     # The ICU libraries linked into libmozjs will not include the ICU data,
+     # so link it directly.
+     USE_LIBS += ['icudata']
+ 
+ OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']
+ 
+ if CONFIG['GNU_CXX']:
+diff --git a/js/src/jsapi-tests/moz.build b/js/src/jsapi-tests/moz.build
+--- a/js/src/jsapi-tests/moz.build
++++ b/js/src/jsapi-tests/moz.build
+@@ -133,19 +133,21 @@ LOCAL_INCLUDES += [
+ ]
+ 
+ if CONFIG['ENABLE_INTL_API'] and CONFIG['MOZ_ICU_DATA_ARCHIVE']:
+     # The ICU libraries linked into libmozjs will not include the ICU data,
+     # so link it directly.
+     USE_LIBS += ['icudata']
+ 
+ USE_LIBS += [
+-    'static:js',
++    'static:js'
+ ]
+ 
++USE_LIBS += [ 'baldrdash' ]
++
+ OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']
+ 
+ if CONFIG['GNU_CXX']:
+     CXXFLAGS += ['-Wno-shadow', '-Werror=format', '-fno-strict-aliasing']
+ 
+ # This is intended as a temporary workaround to enable VS2015.
+ if CONFIG['_MSC_VER']:
+     CXXFLAGS += ['-wd4312']
 diff --git a/js/src/jsapi.h b/js/src/jsapi.h
 --- a/js/src/jsapi.h
 +++ b/js/src/jsapi.h
@@ -853,6 +942,29 @@ diff --git a/js/src/shell/js.cpp b/js/src/shell/js.cpp
                                 "SharedArrayBuffer and Atomics "
  #  if SHARED_MEMORY_DEFAULT
                                 "(default: on, off to disable)"
+diff --git a/js/src/shell/moz.build b/js/src/shell/moz.build
+--- a/js/src/shell/moz.build
++++ b/js/src/shell/moz.build
+@@ -3,17 +3,18 @@
+ # This Source Code Form is subject to the terms of the Mozilla Public
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ if CONFIG['JS_SHELL_NAME']:
+     GeckoProgram(CONFIG['JS_SHELL_NAME'], linkage=None)
+     if CONFIG['JS_BUNDLED_EDITLINE']:
+         USE_LIBS += ['editline']
+-    USE_LIBS += ['static:js']
++    USE_LIBS += [ 'static:js' ]
++    USE_LIBS += [ 'baldrdash' ]
+ 
+ UNIFIED_SOURCES += [
+     'js.cpp',
+     'jsoptparse.cpp',
+     'jsshell.cpp',
+     'OSObject.cpp'
+ ]
+ 
 diff --git a/js/src/wasm/WasmCompile.cpp b/js/src/wasm/WasmCompile.cpp
 --- a/js/src/wasm/WasmCompile.cpp
 +++ b/js/src/wasm/WasmCompile.cpp
