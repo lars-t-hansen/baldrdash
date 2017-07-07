@@ -2,7 +2,7 @@
 # User Lars T Hansen <lhansen@mozilla.com>
 # Date 1499384022 25200
 #      Thu Jul 06 16:33:42 2017 -0700
-# Node ID 13a9e347381a2c49d123574ce8c1d4cfcf4b88c9
+# Node ID ccb568080402d36e92634dd9173eebd1aaed4f0c
 # Parent  7a401b1e5f9854a1b49f567374d380e3e0e1100a
 Cretonne compilation framework
 
@@ -46,8 +46,8 @@ diff --git a/js/src/baldrdash/Makefile b/js/src/baldrdash/Makefile
 new file mode 100644
 --- /dev/null
 +++ b/js/src/baldrdash/Makefile
-@@ -0,0 +1,26 @@
-+src/baldrdash.rs: baldrdash.h Makefile
+@@ -0,0 +1,27 @@
++src/baldrapi.rs: baldrapi.h Makefile
 +	bindgen \
 +	--whitelist-type ConstantValue \
 +	--whitelist-type ExprType \
@@ -63,21 +63,22 @@ new file mode 100644
 +	--whitelist-type WasmContext \
 +	--whitelist-function 'global_.*' \
 +	--whitelist-function 'sig_.*' \
++	--whitelist-function 'sigWithId_.*' \
 +	--whitelist-function 'sigIdDesc_.*' \
 +	--whitelist-function 'env_.*' \
 +	--whitelist-function 'cx_.*' \
-+	baldrdash.h | \
++	baldrapi.h | \
 +	sed -e s/ValType_//g \
 +	    -e s/ExprType_//g \
 +	    -e s/MemoryUsage_//g \
 +	    -e s/SigIdDesc_Kind_//g \
 +	    -e s/BD_//g \
 +	> src/baldrapi.rs
-diff --git a/js/src/baldrdash/baldrdash.h b/js/src/baldrdash/baldrdash.h
+diff --git a/js/src/baldrdash/baldrapi.h b/js/src/baldrdash/baldrapi.h
 new file mode 100644
 --- /dev/null
-+++ b/js/src/baldrdash/baldrdash.h
-@@ -0,0 +1,130 @@
++++ b/js/src/baldrdash/baldrapi.h
+@@ -0,0 +1,137 @@
 +/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
 + * vim: set ts=8 sts=4 et sw=4 tw=99:
 + *
@@ -108,16 +109,17 @@ new file mode 100644
 +// be no other errors, as the bytecode will already have been validated before
 +// this call.
 +
-+// This file is input to Rust's bindgen, so as to create APIs for the Cretonne
-+// pipeline to access compilation metadata.  The output of bindgen is
++// This file is input to Rust's bindgen, so as to create primitive APIs for the
++// Cretonne pipeline to access compilation metadata.  The output of bindgen is
 +// postprocessed to remove all the BD_ prefixes and to remove the redundant type
 +// name prefixes in the enums (eg, ValType::ValType_I32 becomes just
-+// ValType::I32).  See Makefile in this directory for more.  See code in src/
-+// for examples of use.
++// ValType::I32).  See Makefile in this directory for more.
++//
++// The actual Rust API then wraps these primitive APIs.  See src/baldrdash.rs.
 +//
 +// This file can be included in SpiderMonkey's C++ code, where all the prefixes
 +// must be obeyed.  The purpose of the prefixes is to avoid type confusion.  See
-+// js/src/wasm/WasmCretonneCompile.cpp for more.
++// js/src/wasm/WasmCretonneCompile.cpp.
 +
 +// DO NOT USE C++ IN THIS FILE.
 +// DO NOT INCLUDE SPIDERMONKEY HEADER FILES INTO THIS FILE.
@@ -125,7 +127,17 @@ new file mode 100644
 +#include <stdbool.h>
 +#include <inttypes.h>
 +
-+// wasm/WasmBinaryConstants.h
++// wasm/*.h, class and struct types that are opaque to us here
++
++typedef struct BD_WasmContext BD_WasmContext;
++typedef struct BD_ModuleEnvironment BD_ModuleEnvironment;
++typedef struct BD_Sig BD_Sig;
++typedef struct BD_SigWithId BD_SigWithId;
++typedef struct BD_SigIdDesc BD_SigIdDesc;
++typedef struct BD_TableDesc BD_TableDesc;
++typedef struct BD_GlobalDesc BD_GlobalDesc;
++
++// wasm/WasmBinaryConstants.h: enum class ValType
 +
 +typedef enum
 +{
@@ -147,7 +159,7 @@ new file mode 100644
 +    ExprType_F64 = 0x7c
 +} BD_ExprType;
 +
-+// wasm/WasmCode.h
++// wasm/WasmCode.h: enum class MemoryUsage
 +
 +typedef enum
 +{
@@ -169,39 +181,35 @@ new file mode 100644
 +    } u;
 +} BD_ConstantValue;
 +
-+typedef struct BD_WasmContext BD_WasmContext;
-+typedef struct BD_ModuleEnvironment BD_ModuleEnvironment;
-+typedef struct BD_Sig BD_Sig;
-+typedef struct BD_SigWithId BD_SigWithId;
-+typedef struct BD_SigIdDesc BD_SigIdDesc;
-+typedef struct BD_TableDesc BD_TableDesc;
-+typedef struct BD_GlobalDesc BD_GlobalDesc;
-+
 +const BD_ModuleEnvironment* cx_environment(const BD_WasmContext*);
 +
 +uint32_t sig_length(const BD_Sig*);
 +const BD_ValType* sig_args(const BD_Sig*);
 +BD_ValType sig_argType(const BD_Sig*, uint32_t argIndex);
 +BD_ExprType sig_retType(const BD_Sig*);
-+const BD_SigIdDesc* sig_idDesc(const BD_Sig*);
++
++const BD_SigIdDesc* sigWithId_idDesc(const BD_SigWithId*);
++
++// wasm/WasmTypes.h: enum class Kind within class SigIdDesc
 +
 +typedef enum
 +{
-+    SigIdDesc_Kind_Global = 0,	  /* FIXME */
-+    SigIdDesc_Kind_Immediate = 1, /* FIXME */
-+    SigIdDesc_Kind_None = 2,	  /* FIXME */
++    SigIdDesc_Kind_None = 0,
++    SigIdDesc_Kind_Immediate = 1,
++    SigIdDesc_Kind_Global = 2
 +} BD_SigIdDescKind;
 +
 +BD_SigIdDescKind sigIdDesc_kind(const BD_SigIdDesc*);
 +
 +const BD_Sig* env_functionSignature(const BD_ModuleEnvironment*, uint32_t funcIndex);
++uint32_t env_funcImportGlobalDataOffset(const BD_ModuleEnvironment*, uint32_t funcIndex);
 +bool env_funcIsImport(const BD_ModuleEnvironment*, uint32_t funcIndex);
 +const BD_SigWithId* env_signature(const BD_ModuleEnvironment*, uint32_t sigIndex);
 +uint32_t env_numTables(const BD_ModuleEnvironment*);
 +const BD_TableDesc* env_table(const BD_ModuleEnvironment*, uint32_t tableIndex);
-+const uint32_t* env_funcImportGlobalDataOffsets(const BD_ModuleEnvironment*, uint32_t funcIndex);
 +const BD_GlobalDesc* env_global(const BD_ModuleEnvironment*, uint32_t globalIndex);
 +uint32_t env_minMemoryLength(const BD_ModuleEnvironment*);
++bool env_hasMaxMemoryLength(const BD_ModuleEnvironment*);
 +uint32_t env_maxMemoryLength(const BD_ModuleEnvironment*);
 +BD_MemoryUsage env_memoryUsage(const BD_ModuleEnvironment*);
 +
@@ -224,7 +232,7 @@ diff --git a/js/src/baldrdash/src/baldrapi.rs b/js/src/baldrdash/src/baldrapi.rs
 new file mode 100644
 --- /dev/null
 +++ b/js/src/baldrdash/src/baldrapi.rs
-@@ -0,0 +1,234 @@
+@@ -0,0 +1,237 @@
 +/* automatically generated by rust-bindgen */
 +
 +#[repr(C)]
@@ -250,6 +258,41 @@ new file mode 100644
 +    fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 +        fmt.write_str("__BindgenUnionField")
 +    }
++}
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct WasmContext {
++    _unused: [u8; 0],
++}
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct ModuleEnvironment {
++    _unused: [u8; 0],
++}
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct Sig {
++    _unused: [u8; 0],
++}
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct SigWithId {
++    _unused: [u8; 0],
++}
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct SigIdDesc {
++    _unused: [u8; 0],
++}
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct TableDesc {
++    _unused: [u8; 0],
++}
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct GlobalDesc {
++    _unused: [u8; 0],
 +}
 +#[repr(u32)]
 +#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -348,41 +391,6 @@ new file mode 100644
 +impl Clone for ConstantValue {
 +    fn clone(&self) -> Self { *self }
 +}
-+#[repr(C)]
-+#[derive(Debug, Copy, Clone)]
-+pub struct WasmContext {
-+    _unused: [u8; 0],
-+}
-+#[repr(C)]
-+#[derive(Debug, Copy, Clone)]
-+pub struct ModuleEnvironment {
-+    _unused: [u8; 0],
-+}
-+#[repr(C)]
-+#[derive(Debug, Copy, Clone)]
-+pub struct Sig {
-+    _unused: [u8; 0],
-+}
-+#[repr(C)]
-+#[derive(Debug, Copy, Clone)]
-+pub struct SigWithId {
-+    _unused: [u8; 0],
-+}
-+#[repr(C)]
-+#[derive(Debug, Copy, Clone)]
-+pub struct SigIdDesc {
-+    _unused: [u8; 0],
-+}
-+#[repr(C)]
-+#[derive(Debug, Copy, Clone)]
-+pub struct TableDesc {
-+    _unused: [u8; 0],
-+}
-+#[repr(C)]
-+#[derive(Debug, Copy, Clone)]
-+pub struct GlobalDesc {
-+    _unused: [u8; 0],
-+}
 +extern "C" {
 +    pub fn cx_environment(arg1: *const WasmContext)
 +     -> *const ModuleEnvironment;
@@ -400,14 +408,14 @@ new file mode 100644
 +    pub fn sig_retType(arg1: *const Sig) -> ExprType;
 +}
 +extern "C" {
-+    pub fn sig_idDesc(arg1: *const Sig) -> *const SigIdDesc;
++    pub fn sigWithId_idDesc(arg1: *const SigWithId) -> *const SigIdDesc;
 +}
 +#[repr(u32)]
 +#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 +pub enum SigIdDescKind {
-+    Global = 0,
++    None = 0,
 +    Immediate = 1,
-+    None = 2,
++    Global = 2,
 +}
 +extern "C" {
 +    pub fn sigIdDesc_kind(arg1: *const SigIdDesc) -> SigIdDescKind;
@@ -415,6 +423,10 @@ new file mode 100644
 +extern "C" {
 +    pub fn env_functionSignature(arg1: *const ModuleEnvironment,
 +                                 funcIndex: u32) -> *const Sig;
++}
++extern "C" {
++    pub fn env_funcImportGlobalDataOffset(arg1: *const ModuleEnvironment,
++                                          funcIndex: u32) -> u32;
 +}
 +extern "C" {
 +    pub fn env_funcIsImport(arg1: *const ModuleEnvironment, funcIndex: u32)
@@ -432,15 +444,14 @@ new file mode 100644
 +     -> *const TableDesc;
 +}
 +extern "C" {
-+    pub fn env_funcImportGlobalDataOffsets(arg1: *const ModuleEnvironment,
-+                                           funcIndex: u32) -> *const u32;
-+}
-+extern "C" {
 +    pub fn env_global(arg1: *const ModuleEnvironment, globalIndex: u32)
 +     -> *const GlobalDesc;
 +}
 +extern "C" {
 +    pub fn env_minMemoryLength(arg1: *const ModuleEnvironment) -> u32;
++}
++extern "C" {
++    pub fn env_hasMaxMemoryLength(arg1: *const ModuleEnvironment) -> bool;
 +}
 +extern "C" {
 +    pub fn env_maxMemoryLength(arg1: *const ModuleEnvironment) -> u32;
@@ -463,29 +474,147 @@ diff --git a/js/src/baldrdash/src/baldrdash.rs b/js/src/baldrdash/src/baldrdash.
 new file mode 100644
 --- /dev/null
 +++ b/js/src/baldrdash/src/baldrdash.rs
-@@ -0,0 +1,23 @@
-+// Safe wrappers to the low-level ABI.  This re-exports all types in baldrapi.
+@@ -0,0 +1,141 @@
++// Safe wrappers to the low-level ABI.  This re-exports all types in
++// baldrapi but none of the functions.
 +//
 +// There are other options than an ADT interface here; the WasmContext
 +// could be packaged up as a Rust object, with methods on it, and so
 +// on.  There's more complexity in that, notably in storage
 +// management.  Perhaps traits could be brought to bear.
 +
++// TODO: should many u32 arguments and return values here really be
++// usize, to be more conventional?
++
++use std::slice;
++
 +use baldrapi;
 +
-+pub use baldrapi::*;
++pub use baldrapi::ExprType;
++pub use baldrapi::GlobalDesc;
++pub use baldrapi::MemoryUsage;
++pub use baldrapi::ModuleEnvironment;
++pub use baldrapi::Sig;
++pub use baldrapi::SigIdDesc;
++pub use baldrapi::SigIdDescKind;
++pub use baldrapi::SigWithId;
++pub use baldrapi::TableDesc;
++pub use baldrapi::ValType;
++pub use baldrapi::WasmContext;
++
++pub enum ConstantValue {
++    I32(i32),
++    I64(i64),
++    F32(f32),
++    F64(f64)
++}
++
++// WasmContext accessors
 +
 +pub fn cx_environment(cx:*const WasmContext) -> *const ModuleEnvironment {
-+    unsafe {
-+        baldrapi::cx_environment(cx)
-+    }
++    unsafe { baldrapi::cx_environment(cx) }
++}
++
++// ModuleEnvironment accessors
++
++pub fn env_functionSignature(env:*const ModuleEnvironment, func_index:u32) -> *const Sig {
++    unsafe { baldrapi::env_functionSignature(env, func_index) }
++}
++
++pub fn env_func_is_import(env:*const ModuleEnvironment, func_index:u32) -> bool {
++    unsafe { baldrapi::env_funcIsImport(env, func_index) }
++}
++
++pub fn env_func_import_global_data_offset(env:*const ModuleEnvironment, func_index:u32) -> u32 {
++    unsafe { baldrapi::env_funcImportGlobalDataOffset(env, func_index) }
++}
++
++pub fn env_signature(env:*const ModuleEnvironment, sig_index:u32) -> *const SigWithId {
++    unsafe { baldrapi::env_signature(env, sig_index) }
 +}
 +
 +pub fn env_num_tables(env:*const ModuleEnvironment) -> u32 {
++    unsafe { baldrapi::env_numTables(env) }
++}
++
++pub fn env_table(env:*const ModuleEnvironment, table_index:u32) -> *const TableDesc {
++    unsafe { baldrapi::env_table(env, table_index) }
++}
++
++pub fn env_global(env:*const ModuleEnvironment, global_index:u32) -> *const GlobalDesc {
++    unsafe { baldrapi::env_global(env, global_index) }
++}
++
++pub fn env_min_memory_length(env:*const ModuleEnvironment) -> u32 {
++    unsafe { baldrapi::env_minMemoryLength(env) }
++}
++
++pub fn env_max_memory_length(env:*const ModuleEnvironment) -> Option<u32> {
 +    unsafe {
-+        baldrapi::env_numTables(env)
++        if baldrapi::env_hasMaxMemoryLength(env) {
++            Some(baldrapi::env_maxMemoryLength(env))
++        } else {
++            None
++        }
 +    }
 +}
++
++pub fn env_memory_usage(env:*const ModuleEnvironment) -> MemoryUsage {
++    unsafe { baldrapi::env_memoryUsage(env) }
++}
++
++// Sig accessors
++
++pub fn sig_length(sig:*const Sig) -> u32 {
++    unsafe { baldrapi::sig_length(sig) }
++}
++
++pub fn sig_args<'a>(sig:*const Sig) -> &'a [ValType] {
++    unsafe {
++        slice::from_raw_parts(baldrapi::sig_args(sig),
++                              baldrapi::sig_length(sig) as usize)
++    }
++}
++
++pub fn sig_arg_type(sig:*const Sig, arg_index: u32) -> ValType {
++    unsafe { baldrapi::sig_argType(sig, arg_index) }
++}
++
++pub fn sig_ret_type(sig:*const Sig) -> ExprType {
++    unsafe { baldrapi::sig_retType(sig) }
++}
++
++pub fn sig_with_id_id_desc(sig_with_id:*const SigWithId) -> *const SigIdDesc {
++    unsafe { baldrapi::sigWithId_idDesc(sig_with_id) }
++}
++
++// SigIdDesc accessors
++
++pub fn sig_id_desc_kind(desc:*const SigIdDesc) -> SigIdDescKind {
++    unsafe { baldrapi::sigIdDesc_kind(desc) }
++}
++
++// Global accessors
++
++pub fn global_type(global:*const GlobalDesc) -> ValType {
++    unsafe { baldrapi::global_type(global) }
++}
++
++pub fn global_constant_value(global:*const GlobalDesc) -> Option<ConstantValue> {
++    unsafe {
++        if !baldrapi::global_isConstant(global) {
++            return None
++        }
++        let v = baldrapi::global_constantValue(global);
++        match v.t {
++            ValType::I32 => Some(ConstantValue::I32(*v.u.i32.as_ref())),
++            ValType::I64 => Some(ConstantValue::I64(*v.u.i64.as_ref())),
++            ValType::F32 => Some(ConstantValue::F32(*v.u.f32.as_ref())),
++            ValType::F64 => Some(ConstantValue::F64(*v.u.f64.as_ref()))
++        }
++    }
++}
++
 +
 diff --git a/js/src/baldrdash/src/lib.rs b/js/src/baldrdash/src/lib.rs
 new file mode 100644
@@ -777,7 +906,7 @@ diff --git a/js/src/wasm/WasmCretonneCompile.cpp b/js/src/wasm/WasmCretonneCompi
 new file mode 100644
 --- /dev/null
 +++ b/js/src/wasm/WasmCretonneCompile.cpp
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,277 @@
 +/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
 + * vim: set ts=8 sts=4 et sw=4 tw=99:
 + *
@@ -800,7 +929,7 @@ new file mode 100644
 +
 +extern "C" {
 +// The API exported from this module to Rust.
-+#include "baldrdash/baldrdash.h"
++#include "baldrdash/baldrapi.h"
 +}
 +
 +extern "C" {
@@ -835,9 +964,32 @@ new file mode 100644
 +    return true;
 +}
 +
++////////////////////////////////////////////////////////////////////////////////
++//
 +// Callbacks from Rust to C++.  These don't actually have to be named functions;
 +// they could be members (function pointers) on the WasmContext structure.  But
 +// there doesn't seem to be any harm in naming them.
++
++// Assert that we got the values right when we defined the API for Rust
++
++static_assert(BD_ValType::ValType_I32 == static_cast<int>(wasm::ValType::I32), "Failed constraint");
++static_assert(BD_ValType::ValType_I64 == static_cast<int>(wasm::ValType::I64), "Failed constraint");
++static_assert(BD_ValType::ValType_F32 == static_cast<int>(wasm::ValType::F32), "Failed constraint");
++static_assert(BD_ValType::ValType_F64 == static_cast<int>(wasm::ValType::F64), "Failed constraint");
++
++static_assert(BD_ExprType::ExprType_I32 == static_cast<int>(wasm::ExprType::I32), "Failed constraint");
++static_assert(BD_ExprType::ExprType_I64 == static_cast<int>(wasm::ExprType::I64), "Failed constraint");
++static_assert(BD_ExprType::ExprType_F32 == static_cast<int>(wasm::ExprType::F32), "Failed constraint");
++static_assert(BD_ExprType::ExprType_F64 == static_cast<int>(wasm::ExprType::F64), "Failed constraint");
++static_assert(BD_ExprType::ExprType_Void == static_cast<int>(wasm::ExprType::Void), "Failed constraint");
++
++static_assert(BD_MemoryUsage::MemoryUsage_None == static_cast<int>(wasm::MemoryUsage::None), "Failed constraint");
++static_assert(BD_MemoryUsage::MemoryUsage_Unshared == static_cast<int>(wasm::MemoryUsage::Unshared), "Failed constraint");
++static_assert(BD_MemoryUsage::MemoryUsage_Shared == static_cast<int>(wasm::MemoryUsage::Shared), "Failed constraint");
++
++static_assert(BD_SigIdDescKind::SigIdDesc_Kind_None == static_cast<int>(wasm::SigIdDesc::Kind::None), "Failed constraint");
++static_assert(BD_SigIdDescKind::SigIdDesc_Kind_Immediate == static_cast<int>(wasm::SigIdDesc::Kind::Immediate), "Failed constraint");
++static_assert(BD_SigIdDescKind::SigIdDesc_Kind_Global == static_cast<int>(wasm::SigIdDesc::Kind::Global), "Failed constraint");
 +
 +// WasmContext
 +
@@ -845,10 +997,41 @@ new file mode 100644
 +cx_environment(const BD_WasmContext* cx_)
 +{
 +    const WasmContext* cx = reinterpret_cast<const WasmContext*>(cx_);
-+    return reinterpret_cast<const BD_ModuleEnvironment*>(&cx->task->env());
++    const ModuleEnvironment* env = &cx->task->env();
++    return reinterpret_cast<const BD_ModuleEnvironment*>(env);
 +}
 +
 +// ModuleEnvironment
++
++const BD_Sig*
++env_functionSignature(const BD_ModuleEnvironment* env_, uint32_t funcIndex)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    const Sig* sig = env->funcSigs[funcIndex];
++    return reinterpret_cast<const BD_Sig*>(sig);
++}
++
++uint32_t
++env_funcImportGlobalDataOffset(const BD_ModuleEnvironment* env_, uint32_t funcIndex)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    return env->funcImportGlobalDataOffsets[funcIndex];
++}
++
++bool
++env_funcIsImport(const BD_ModuleEnvironment* env_, uint32_t funcIndex)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    return env->funcIsImport(funcIndex);
++}
++
++const BD_SigWithId*
++env_signature(const BD_ModuleEnvironment* env_, uint32_t sigIndex)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    const SigWithId* sig = &env->sigs[sigIndex];
++    return reinterpret_cast<const BD_SigWithId*>(sig);
++}
 +
 +uint32_t
 +env_numTables(const BD_ModuleEnvironment* env_)
@@ -856,6 +1039,151 @@ new file mode 100644
 +    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
 +    return env->tables.length();
 +}
++
++const BD_TableDesc*
++env_table(const BD_ModuleEnvironment* env_, uint32_t tableIndex)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    const TableDesc* table = &env->tables[0];
++    return reinterpret_cast<const BD_TableDesc*>(table);
++}
++
++const BD_GlobalDesc*
++env_global(const BD_ModuleEnvironment* env_, uint32_t globalIndex)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    const GlobalDesc* global = &env->globals[globalIndex];
++    return reinterpret_cast<const BD_GlobalDesc*>(global);
++}
++
++uint32_t
++env_minMemoryLength(const BD_ModuleEnvironment* env_)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    return env->minMemoryLength;
++}
++
++bool
++env_hasMaxMemoryLength(const BD_ModuleEnvironment* env_)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    return env->maxMemoryLength.isSome();
++}
++
++uint32_t
++env_maxMemoryLength(const BD_ModuleEnvironment* env_)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    if (env->maxMemoryLength.isSome())
++        return env->maxMemoryLength.value();
++    return 0;
++}
++
++BD_MemoryUsage
++env_memoryUsage(const BD_ModuleEnvironment* env_)
++{
++    const wasm::ModuleEnvironment* env = reinterpret_cast<const wasm::ModuleEnvironment*>(env_);
++    MemoryUsage mu = env->memoryUsage;
++    return BD_MemoryUsage(static_cast<int>(mu));
++}
++
++// Sig
++
++uint32_t
++sig_length(const BD_Sig* sig_)
++{
++    const Sig* sig = reinterpret_cast<const Sig*>(sig_);
++    return sig->args().length();
++}
++
++const BD_ValType*
++sig_args(const BD_Sig* sig_)
++{
++    const Sig* sig = reinterpret_cast<const Sig*>(sig_);
++    const ValType* args = &sig->args()[0];
++    return reinterpret_cast<const BD_ValType*>(args);
++}
++
++BD_ValType
++sig_argType(const BD_Sig* sig_, uint32_t argIndex)
++{
++    const Sig* sig = reinterpret_cast<const Sig*>(sig_);
++    ValType type = sig->args()[argIndex];
++    return BD_ValType(int(type));
++}
++
++BD_ExprType
++sig_retType(const BD_Sig* sig_)
++{
++    const Sig* sig = reinterpret_cast<const Sig*>(sig_);
++    ExprType ret = sig->ret();
++    return BD_ExprType(int(ret));
++}
++
++// SigWithId
++
++const BD_SigIdDesc*
++sigWithId_idDesc(const BD_SigWithId* sig_)
++{
++    const SigWithId* sig = reinterpret_cast<const SigWithId*>(sig_);
++    const SigIdDesc* sigId = &sig->id;
++    return reinterpret_cast<const BD_SigIdDesc*>(sigId);
++}
++
++// SigIdDesc
++
++BD_SigIdDescKind
++sigIdDesc_kind(const BD_SigIdDesc* desc_)
++{
++    const SigIdDesc* desc = reinterpret_cast<const SigIdDesc*>(desc_);
++    SigIdDesc::Kind kind = desc->kind();
++    return BD_SigIdDescKind(int(kind));
++}
++
++// Global
++
++bool
++global_isConstant(const BD_GlobalDesc* global_)
++{
++    const GlobalDesc* global = reinterpret_cast<const GlobalDesc*>(global_);
++    return global->isConstant();
++}
++
++BD_ConstantValue
++global_constantValue(const BD_GlobalDesc* global_)
++{
++    const GlobalDesc* global = reinterpret_cast<const GlobalDesc*>(global_);
++    Val value = global->constantValue();
++    BD_ConstantValue v;
++    v.t = BD_ValType(int(value.type()));
++    switch (value.type()) {
++      case ValType::I32:
++        v.u.i32 = value.i32();
++        break;
++      case ValType::I64:
++        v.u.i64 = value.i64();
++        break;
++      case ValType::F32:
++        v.u.f32 = value.f32();
++        break;
++      case ValType::F64:
++        v.u.i64 = value.i64();
++        break;
++      default:
++        MOZ_CRASH("Bad type");
++    }
++    return v;
++}
++
++BD_ValType
++global_type(const BD_GlobalDesc* global_)
++{
++    const GlobalDesc* global = reinterpret_cast<const GlobalDesc*>(global_);
++    ValType type = global->type();
++    return BD_ValType(int(type));
++}
++
++
 diff --git a/js/src/wasm/WasmCretonneCompile.h b/js/src/wasm/WasmCretonneCompile.h
 new file mode 100644
 --- /dev/null
