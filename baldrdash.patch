@@ -2,8 +2,8 @@
 # User Lars T Hansen <lhansen@mozilla.com>
 # Date 1499384022 25200
 #      Thu Jul 06 16:33:42 2017 -0700
-# Node ID 44571abf21bde78957ad38a0ba99415ff5d935fb
-# Parent  5f7d4b62f6e497b3aa10f8c1171e86be52e54cf9
+# Node ID c13de41d97cf478d157c2806e0c43e2b315aabde
+# Parent  9f61b0a0397e393efa5158e2fc5894c2485d49dd
 Baldrdash compilation framework
 
 diff --git a/.hgignore b/.hgignore
@@ -246,14 +246,14 @@ new file mode 100644
 +const BD_ModuleEnvironment* cx_environment(const BD_WasmContext*);
 +const BD_FuncBytes* cx_funcBytes(const BD_WasmContext*);
 +bool cx_debugEnabled(const BD_WasmContext*);
-+BD_Emitter* cx_emitter(const BD_WasmContext*);
++const BD_Emitter* cx_emitter(const BD_WasmContext*);
 +
 +// appendBytes returns false on OOM, otherwise true
-+bool emitter_appendBytes(BD_Emitter*, const uint8_t* begin, uint32_t count);
-+void emitter_setBeginOffset(BD_Emitter*, uint32_t offset);
-+void emitter_setEndOffset(BD_Emitter*, uint32_t offset);
-+void emitter_setRetOffset(BD_Emitter*, uint32_t offset);
-+void emitter_setNormalEntryOffset(BD_Emitter*, uint32_t offset);
++bool emitter_appendBytes(const BD_Emitter*, const uint8_t* begin, uint32_t count);
++void emitter_setBeginOffset(const BD_Emitter*, uint32_t offset);
++void emitter_setEndOffset(const BD_Emitter*, uint32_t offset);
++void emitter_setRetOffset(const BD_Emitter*, uint32_t offset);
++void emitter_setNormalEntryOffset(const BD_Emitter*, uint32_t offset);
 +
 +// TODO: There will be more emitter methods, to set up metainformation such as
 +// addresses of heap accesses, and patch points.
@@ -497,23 +497,23 @@ new file mode 100644
 +    pub fn cx_debugEnabled(arg1: *const WasmContext) -> bool;
 +}
 +extern "C" {
-+    pub fn cx_emitter(arg1: *const WasmContext) -> *mut Emitter;
++    pub fn cx_emitter(arg1: *const WasmContext) -> *const Emitter;
 +}
 +extern "C" {
-+    pub fn emitter_appendBytes(arg1: *mut Emitter, begin: *const u8,
++    pub fn emitter_appendBytes(arg1: *const Emitter, begin: *const u8,
 +                               count: u32) -> bool;
 +}
 +extern "C" {
-+    pub fn emitter_setBeginOffset(arg1: *mut Emitter, offset: u32);
++    pub fn emitter_setBeginOffset(arg1: *const Emitter, offset: u32);
 +}
 +extern "C" {
-+    pub fn emitter_setEndOffset(arg1: *mut Emitter, offset: u32);
++    pub fn emitter_setEndOffset(arg1: *const Emitter, offset: u32);
 +}
 +extern "C" {
-+    pub fn emitter_setRetOffset(arg1: *mut Emitter, offset: u32);
++    pub fn emitter_setRetOffset(arg1: *const Emitter, offset: u32);
 +}
 +extern "C" {
-+    pub fn emitter_setNormalEntryOffset(arg1: *mut Emitter, offset: u32);
++    pub fn emitter_setNormalEntryOffset(arg1: *const Emitter, offset: u32);
 +}
 +extern "C" {
 +    pub fn env_kind(arg1: *const ModuleEnvironment) -> ModuleKind;
@@ -612,7 +612,7 @@ diff --git a/js/src/baldrdash/src/baldrdash.rs b/js/src/baldrdash/src/baldrdash.
 new file mode 100644
 --- /dev/null
 +++ b/js/src/baldrdash/src/baldrdash.rs
-@@ -0,0 +1,231 @@
+@@ -0,0 +1,244 @@
 +/* Copyright 2017 Mozilla Foundation
 + *
 + * Licensed under the Apache License, Version 2.0 (the "License");
@@ -631,31 +631,20 @@ new file mode 100644
 +// Safe wrappers to the low-level ABI.  This re-exports all types in
 +// baldrapi but none of the functions.
 +
-+// TODO: There are other options than an ADT interface here; the
-+// WasmContext could be packaged up as a Rust object, with methods on
-+// it, and so on.  There's more complexity in that.
-+//
-+// TODO: should many u32 arguments and return values here really be
++// TODO: Should many u32 arguments and return values here really be
 +// usize, to be more conventional?
++//
++// TODO: No methods here on TableDesc, surely a bug.
 +
 +use std::slice;
 +
 +use baldrapi;
 +
-+pub use baldrapi::Emitter;
 +pub use baldrapi::ExprType;
-+pub use baldrapi::FuncBytes;
-+pub use baldrapi::GlobalDesc;
 +pub use baldrapi::MemoryUsage;
-+pub use baldrapi::ModuleEnvironment;
 +pub use baldrapi::ModuleKind;
-+pub use baldrapi::Sig;
-+pub use baldrapi::SigIdDesc;
 +pub use baldrapi::SigIdDescKind;
-+pub use baldrapi::SigWithId;
-+pub use baldrapi::TableDesc;
 +pub use baldrapi::ValType;
-+pub use baldrapi::WasmContext;
 +
 +pub enum ConstantValue {
 +    I32(i32),
@@ -664,198 +653,231 @@ new file mode 100644
 +    F64(f64)
 +}
 +
-+// WasmContext accessors
++pub struct Emitter ( *const baldrapi::Emitter );
++pub struct FuncBytes ( *const baldrapi::FuncBytes );
++pub struct GlobalDesc ( *const baldrapi::GlobalDesc );
++pub struct ModuleEnvironment ( *const baldrapi::ModuleEnvironment );
++pub struct Sig ( *const baldrapi::Sig );
++pub struct SigIdDesc ( *const baldrapi::SigIdDesc );
++pub struct SigWithId ( *const baldrapi::SigWithId );
++pub struct TableDesc ( *const baldrapi::TableDesc );
++pub struct WasmContext ( *const baldrapi::WasmContext );
 +
-+pub fn cx_environment(cx:*const WasmContext) -> *const ModuleEnvironment {
-+    unsafe { baldrapi::cx_environment(cx) }
-+}
++impl Emitter
++{
++    pub fn append_bytes(&self, bytes: &[u8]) -> Result<(),()> {
++        match unsafe { baldrapi::emitter_appendBytes(self.0,
++                                                     bytes.as_ptr(),
++                                                     bytes.len() as u32) }
++        {
++            true => Ok(()),
++            false => Err(())
++        }
++    }
 +
-+pub fn cx_func_bytes(cx: *const WasmContext) -> *const FuncBytes {
-+    unsafe { baldrapi::cx_funcBytes(cx) }
-+}
++    pub fn set_begin_offset(&self, offset: u32) {
++        unsafe { baldrapi::emitter_setBeginOffset(self.0, offset) }
++    }
 +
-+pub fn cx_debug_enabled(cx: *const WasmContext) -> bool {
-+    unsafe { baldrapi::cx_debugEnabled(cx) }
-+}
++    pub fn set_end_offset(&self, offset: u32) {
++        unsafe { baldrapi::emitter_setEndOffset(self.0, offset) }
++    }
 +
-+pub fn cx_emitter(cx: *const WasmContext) -> *mut Emitter {
-+    unsafe { baldrapi::cx_emitter(cx) }
-+}
++    pub fn set_ret_offset(&self, offset: u32) {
++        unsafe { baldrapi::emitter_setRetOffset(self.0, offset) }
++    }
 +
-+// Emitter operators
-+
-+pub fn emitter_append_bytes(emitter: *mut Emitter, bytes: &[u8]) -> Result<(),()> {
-+    match unsafe { baldrapi::emitter_appendBytes(emitter,
-+                                                 bytes.as_ptr(),
-+                                                 bytes.len() as u32) }
-+    {
-+        true => Ok(()),
-+        false => Err(())
++    pub fn set_normal_entry_offset(&self, offset: u32) {
++        unsafe { baldrapi::emitter_setNormalEntryOffset(self.0, offset) }
 +    }
 +}
 +
-+pub fn emitter_set_begin_offset(emitter: *mut Emitter, offset: u32) {
-+    unsafe { baldrapi::emitter_setBeginOffset(emitter, offset) }
-+}
++impl FuncBytes
++{
++    pub fn bytes<'a>(&self) -> &'a [u8] {
++        unsafe {
++            slice::from_raw_parts(baldrapi::funcBytes_bytes(self.0),
++                                  baldrapi::funcBytes_numBytes(self.0) as usize)
++        }
++    }
 +
-+pub fn emitter_set_end_offset(emitter: *mut Emitter, offset: u32) {
-+    unsafe { baldrapi::emitter_setEndOffset(emitter, offset) }
-+}
++    pub fn line_or_bytecode(&self) -> u32 {
++        unsafe { baldrapi::funcBytes_lineOrBytecode(self.0) }
++    }
 +
-+pub fn emitter_set_ret_offset(emitter: *mut Emitter, offset: u32) {
-+    unsafe { baldrapi::emitter_setRetOffset(emitter, offset) }
-+}
++    pub fn sig(&self) -> SigWithId {
++        SigWithId(unsafe { baldrapi::funcBytes_sig(self.0) })
++    }
 +
-+pub fn emitter_set_normal_entry_offset(emitter: *mut Emitter, offset: u32) {
-+    unsafe { baldrapi::emitter_setNormalEntryOffset(emitter, offset) }
-+}
++    pub fn index(&self) -> u32 {
++        unsafe { baldrapi::funcBytes_index(self.0) }
++    }
 +
-+// ModuleEnvironment accessors
-+
-+pub fn env_kind(env: *const ModuleEnvironment) -> ModuleKind {
-+    unsafe { baldrapi::env_kind(env) }
-+}
-+
-+pub fn env_function_signature(env:*const ModuleEnvironment, func_index:u32) -> *const Sig {
-+    unsafe { baldrapi::env_functionSignature(env, func_index) }
-+}
-+
-+pub fn env_func_is_import(env:*const ModuleEnvironment, func_index:u32) -> bool {
-+    unsafe { baldrapi::env_funcIsImport(env, func_index) }
-+}
-+
-+pub fn env_func_import_global_data_offset(env:*const ModuleEnvironment, func_index:u32) -> u32 {
-+    unsafe { baldrapi::env_funcImportGlobalDataOffset(env, func_index) }
-+}
-+
-+pub fn env_signature(env:*const ModuleEnvironment, sig_index:u32) -> *const SigWithId {
-+    unsafe { baldrapi::env_signature(env, sig_index) }
-+}
-+
-+pub fn env_num_tables(env:*const ModuleEnvironment) -> u32 {
-+    unsafe { baldrapi::env_numTables(env) }
-+}
-+
-+pub fn env_table(env:*const ModuleEnvironment, table_index:u32) -> *const TableDesc {
-+    unsafe { baldrapi::env_table(env, table_index) }
-+}
-+
-+pub fn env_global(env:*const ModuleEnvironment, global_index:u32) -> *const GlobalDesc {
-+    unsafe { baldrapi::env_global(env, global_index) }
-+}
-+
-+pub fn env_min_memory_length(env:*const ModuleEnvironment) -> u32 {
-+    unsafe { baldrapi::env_minMemoryLength(env) }
-+}
-+
-+pub fn env_max_memory_length(env:*const ModuleEnvironment) -> Option<u32> {
-+    unsafe {
-+        if baldrapi::env_hasMaxMemoryLength(env) {
-+            Some(baldrapi::env_maxMemoryLength(env))
-+        } else {
-+            None
++    pub fn call_site_line_nums<'a>(&self) -> &'a [u32] {
++        unsafe {
++            slice::from_raw_parts(baldrapi::funcBytes_callSiteLineNums(self.0),
++                                  baldrapi::funcBytes_numCallSiteLineNums(self.0) as usize)
 +        }
 +    }
 +}
 +
-+pub fn env_memory_usage(env:*const ModuleEnvironment) -> MemoryUsage {
-+    unsafe { baldrapi::env_memoryUsage(env) }
-+}
-+
-+// FuncBytes accessors
-+
-+pub fn func_bytes_bytes<'a>(fb: *const FuncBytes) -> &'a [u8] {
-+    unsafe {
-+        slice::from_raw_parts(baldrapi::funcBytes_bytes(fb),
-+                              baldrapi::funcBytes_numBytes(fb) as usize)
++impl GlobalDesc
++{
++    pub fn the_type(&self) -> ValType {
++        unsafe { baldrapi::global_type(self.0) }
 +    }
-+}
 +
-+pub fn func_bytes_line_or_bytecode(fb: *const FuncBytes) -> u32 {
-+    unsafe { baldrapi::funcBytes_lineOrBytecode(fb) }
-+}
-+
-+pub fn func_bytes_sig(fb: *const FuncBytes) -> *const SigWithId {
-+    unsafe { baldrapi::funcBytes_sig(fb) }
-+}
-+
-+pub fn func_bytes_index(fb: *const FuncBytes) -> u32 {
-+    unsafe { baldrapi::funcBytes_index(fb) }
-+}
-+
-+pub fn func_bytes_call_site_line_nums<'a>(fb: *const FuncBytes) -> &'a [u32] {
-+    unsafe {
-+        slice::from_raw_parts(baldrapi::funcBytes_callSiteLineNums(fb),
-+                              baldrapi::funcBytes_numCallSiteLineNums(fb) as usize)
-+    }
-+}
-+
-+// Global accessors
-+
-+pub fn global_type(global:*const GlobalDesc) -> ValType {
-+    unsafe { baldrapi::global_type(global) }
-+}
-+
-+pub fn global_constant_value(global:*const GlobalDesc) -> Option<ConstantValue> {
-+    unsafe {
-+        if !baldrapi::global_isConstant(global) {
-+            return None
-+        }
-+        let v = baldrapi::global_constantValue(global);
-+        match v.t {
-+            ValType::I32 => Some(ConstantValue::I32(*v.u.i32.as_ref())),
-+            ValType::I64 => Some(ConstantValue::I64(*v.u.i64.as_ref())),
-+            ValType::F32 => Some(ConstantValue::F32(*v.u.f32.as_ref())),
-+            ValType::F64 => Some(ConstantValue::F64(*v.u.f64.as_ref()))
++    pub fn constant_value(&self) -> Option<ConstantValue> {
++        unsafe {
++            if !baldrapi::global_isConstant(self.0) {
++                return None
++            }
++            let v = baldrapi::global_constantValue(self.0);
++            match v.t {
++                ValType::I32 => Some(ConstantValue::I32(*v.u.i32.as_ref())),
++                ValType::I64 => Some(ConstantValue::I64(*v.u.i64.as_ref())),
++                ValType::F32 => Some(ConstantValue::F32(*v.u.f32.as_ref())),
++                ValType::F64 => Some(ConstantValue::F64(*v.u.f64.as_ref()))
++            }
 +        }
 +    }
 +}
 +
++impl ModuleEnvironment
++{
++    pub fn kind(&self) -> ModuleKind {
++        unsafe { baldrapi::env_kind(self.0) }
++    }
 +
-+// Sig accessors
++    pub fn function_signature(&self, func_index:u32) -> Sig {
++        Sig(unsafe { baldrapi::env_functionSignature(self.0, func_index) })
++    }
 +
-+pub fn sig_num_args(sig:*const Sig) -> u32 {
-+    unsafe { baldrapi::sig_numArgs(sig) }
-+}
++    pub fn func_is_import(&self, func_index:u32) -> bool {
++        unsafe { baldrapi::env_funcIsImport(self.0, func_index) }
++    }
 +
-+pub fn sig_args<'a>(sig:*const Sig) -> &'a [ValType] {
-+    unsafe {
-+        slice::from_raw_parts(baldrapi::sig_args(sig),
-+                              baldrapi::sig_numArgs(sig) as usize)
++    pub fn func_import_global_data_offset(&self, func_index:u32) -> u32 {
++        unsafe { baldrapi::env_funcImportGlobalDataOffset(self.0, func_index) }
++    }
++
++    pub fn signature(&self, sig_index:u32) -> SigWithId {
++        SigWithId(unsafe { baldrapi::env_signature(self.0, sig_index) })
++    }
++
++    pub fn num_tables(&self) -> u32 {
++        unsafe { baldrapi::env_numTables(self.0) }
++    }
++
++    pub fn table(&self, table_index:u32) -> TableDesc {
++        TableDesc(unsafe { baldrapi::env_table(self.0, table_index) })
++    }
++
++    pub fn global(&self, global_index:u32) -> GlobalDesc {
++        GlobalDesc(unsafe { baldrapi::env_global(self.0, global_index) })
++    }
++
++    pub fn min_memory_length(&self) -> u32 {
++        unsafe { baldrapi::env_minMemoryLength(self.0) }
++    }
++
++    pub fn max_memory_length(&self) -> Option<u32> {
++        unsafe {
++            if baldrapi::env_hasMaxMemoryLength(self.0) {
++                Some(baldrapi::env_maxMemoryLength(self.0))
++            } else {
++                None
++            }
++        }
++    }
++
++    pub fn memory_usage(&self) -> MemoryUsage {
++        unsafe { baldrapi::env_memoryUsage(self.0) }
 +    }
 +}
 +
-+pub fn sig_arg_type(sig:*const Sig, arg_index: u32) -> ValType {
-+    unsafe { baldrapi::sig_argType(sig, arg_index) }
++impl Sig
++{
++    pub fn num_args(&self) -> u32 {
++        unsafe { baldrapi::sig_numArgs(self.0) }
++    }
++
++    pub fn args<'a>(&self) -> &'a [ValType] {
++        unsafe {
++            slice::from_raw_parts(baldrapi::sig_args(self.0),
++                                  baldrapi::sig_numArgs(self.0) as usize)
++        }
++    }
++
++    // TODO: Do we really need this?  It's here because the C++ wasm compilers
++    // use it, but it could be gotten by going via args().
++    pub fn arg_type(&self, arg_index: u32) -> ValType {
++        unsafe { baldrapi::sig_argType(self.0, arg_index) }
++    }
++
++    pub fn ret_type(&self) -> ExprType {
++        unsafe { baldrapi::sig_retType(self.0) }
++    }
 +}
 +
-+pub fn sig_ret_type(sig:*const Sig) -> ExprType {
-+    unsafe { baldrapi::sig_retType(sig) }
++impl SigIdDesc
++{
++    pub fn kind(&self) -> SigIdDescKind {
++        unsafe { baldrapi::sigIdDesc_kind(self.0) }
++    }
 +}
 +
-+// SigWithID accessors
-+
-+pub fn sig_with_id_id_desc(sig_with_id:*const SigWithId) -> *const SigIdDesc {
-+    unsafe { baldrapi::sigWithId_idDesc(sig_with_id) }
++impl SigWithId
++{
++    pub fn id_desc(&self) -> SigIdDesc {
++        SigIdDesc(unsafe { baldrapi::sigWithId_idDesc(self.0) })
++    }
 +}
 +
-+// SigIdDesc accessors
++impl WasmContext
++{
++    pub fn new(p: *const baldrapi::WasmContext) -> WasmContext {
++        WasmContext(p)
++    }
 +
-+pub fn sig_id_desc_kind(desc:*const SigIdDesc) -> SigIdDescKind {
-+    unsafe { baldrapi::sigIdDesc_kind(desc) }
++    pub fn environment(&self) -> ModuleEnvironment {
++        ModuleEnvironment(unsafe { baldrapi::cx_environment(self.0) })
++    }
++
++    pub fn func_bytes(&self) -> FuncBytes {
++        FuncBytes(unsafe { baldrapi::cx_funcBytes(self.0) })
++    }
++
++    pub fn debug_enabled(&self) -> bool {
++        unsafe { baldrapi::cx_debugEnabled(self.0) }
++    }
++
++    pub fn emitter(&self) -> Emitter {
++        Emitter(unsafe { baldrapi::cx_emitter(self.0) })
++    }
 +}
-diff --git a/js/src/baldrdash/src/lib.rs b/js/src/baldrdash/src/lib.rs
++
+diff --git a/js/src/baldrdash/src/cretin.rs b/js/src/baldrdash/src/cretin.rs
 new file mode 100644
 --- /dev/null
-+++ b/js/src/baldrdash/src/lib.rs
-@@ -0,0 +1,120 @@
-+#![allow(unused)]
-+#![warn(unused_must_use)]
++++ b/js/src/baldrdash/src/cretin.rs
+@@ -0,0 +1,121 @@
++/* Copyright 2017 Mozilla Foundation
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
 +
-+mod baldrapi;
-+mod baldrdash;
-+
-+use baldrdash::*;
++// A really stupid wasm compiler, for testing baldrdash.
 +
 +// Test:
 +//
@@ -867,36 +889,28 @@ new file mode 100644
 +// It should print "deadbeef".  No other programs are allowed, though you can choose a different constant.
 +// This only works on x86 and x64, for now.
 +
-+#[no_mangle]
-+pub extern fn wasm_compile_function(cx:*const WasmContext) -> bool {
-+    match compile(cx) {
-+        Ok(_) => true,
-+        Err(_) => false
-+    }
-+}
++use baldrdash::*;
 +
-+type Res = Result<(),()>;
++pub type Res = Result<(),()>;
 +
-+fn compile(cx:*const WasmContext) -> Res {
-+    let mut emitter = cx_emitter(cx);
++pub fn compile(cx:WasmContext) -> Res {
++    let mut emitter = cx.emitter();
 +    let mut offs = 0;
 +
-+    emitter_set_begin_offset(emitter, offs);            // Begin offset before anything
++    emitter.set_begin_offset(offs);            // Begin offset before anything
 +
 +    // Prologue(s)
 +
-+    emitter_set_normal_entry_offset(emitter, offs);     // Normal-entry offset after the profiling prologue
++    emitter.set_normal_entry_offset(offs);     // Normal-entry offset after the profiling prologue
 +
 +    // A completely ad-hoc parser.  There must be no parameters or
 +    // locals; the function's body must be a single i32 expression;
 +    // there must be no explicit return.
 +
-+    let func = cx_func_bytes(cx);
-+    let bytes = func_bytes_bytes(func);
++    let func = cx.func_bytes();
++    let bytes = func.bytes();
 +    let input = 0;
 +
-+    println!("Here");
-+    
 +    // DecodeLocalEntries
 +    let (num_locals, input) = read_var_u32(bytes, input);
 +    assert!(num_locals == 0, "Number of locals");
@@ -909,13 +923,13 @@ new file mode 100644
 +    let (op, input) = read_op(bytes, input);
 +    let input = if op == I32CONST {
 +        let (val, input) = read_var_i32(bytes, input);
-+        let mut code = vec![0xB8];                      // MOV eax, imm32
++        let mut code = vec![0xB8];             // MOV eax, imm32
 +        let mut v = val as u32;
 +        for i in 0..4 {
 +            code.push((v & 255) as u8);
 +            v = v >> 8;
 +        }
-+        try!(emitter_append_bytes(emitter, &code));
++        try!(emitter.append_bytes(&code));
 +        offs += code.len() as u32;
 +        input
 +    } else {
@@ -931,12 +945,12 @@ new file mode 100644
 +
 +    // Return
 +
-+    emitter_set_ret_offset(emitter, offs);              // Return offset right before return instruction
-+    let ret = [0xC3];                                   // RET
-+    try!(emitter_append_bytes(emitter, &ret));
++    emitter.set_ret_offset(offs);              // Return offset right before return instruction
++    let ret = [0xC3];                          // RET
++    try!(emitter.append_bytes(&ret));
 +    offs += ret.len() as u32;
 +
-+    emitter_set_end_offset(emitter, offs);              // End offset after everything
++    emitter.set_end_offset(offs);              // End offset after everything
 +
 +    Ok(())
 +}
@@ -969,6 +983,48 @@ new file mode 100644
 +    }
 +    (value as i32, loc)
 +}
+diff --git a/js/src/baldrdash/src/lib.rs b/js/src/baldrdash/src/lib.rs
+new file mode 100644
+--- /dev/null
++++ b/js/src/baldrdash/src/lib.rs
+@@ -0,0 +1,37 @@
++/* Copyright 2017 Mozilla Foundation
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++// For testing, see instructions in cretin.rs.
++
++#![allow(unused)]
++#![warn(unused_must_use)]
++
++mod baldrapi;                   // Low-level C API, ignore this
++mod baldrdash;                  // High-level Rust API, use this
++mod cretin;                     // Example usages
++
++// This main program should basically remain unused, its only function
++// is to wrap up the C WasmContext into a Rust datum and call the
++// compiler proper.  Change the compile() function you call to use a
++// different compiler.
++
++#[no_mangle]
++pub extern fn wasm_compile_function(cx:*const baldrapi::WasmContext) -> bool {
++    match cretin::compile(baldrdash::WasmContext::new(cx)) {
++        Ok(_) => true,
++        Err(_) => false
++    }
++}
++
 diff --git a/js/src/build/moz.build b/js/src/build/moz.build
 --- a/js/src/build/moz.build
 +++ b/js/src/build/moz.build
@@ -1296,7 +1352,7 @@ diff --git a/js/src/shell/moz.build b/js/src/shell/moz.build
 diff --git a/js/src/wasm/WasmCompile.cpp b/js/src/wasm/WasmCompile.cpp
 --- a/js/src/wasm/WasmCompile.cpp
 +++ b/js/src/wasm/WasmCompile.cpp
-@@ -89,16 +89,17 @@ DecodeCodeSection(Decoder& d, ModuleGene
+@@ -89,32 +89,39 @@ DecodeCodeSection(Decoder& d, ModuleGene
  
      return mg.finishFuncDefs();
  }
@@ -1314,6 +1370,28 @@ diff --git a/js/src/wasm/WasmCompile.cpp b/js/src/wasm/WasmCompile.cpp
      debugEnabled = cx->compartment()->debuggerObservesAsmJS();
  
      this->scriptedCaller = Move(scriptedCaller);
+     return assumptions.initBuildIdFromContext(cx);
+ }
+ 
+ SharedModule
+ wasm::Compile(const ShareableBytes& bytecode, const CompileArgs& args, UniqueChars* error)
+ {
+     MOZ_RELEASE_ASSERT(wasm::HaveSignalHandlers());
+ 
++    // At the moment, Cretonne performs no validation, so validate explicitly.
++    if (args.alwaysCretonne) {
++        if (!Validate(bytecode, error))
++            return nullptr;
++    }
++
+     Decoder d(bytecode.bytes, error);
+ 
+     auto env = js::MakeUnique<ModuleEnvironment>();
+     if (!env)
+         return nullptr;
+ 
+     if (!DecodeModuleEnvironment(d, env.get()))
+         return nullptr;
 diff --git a/js/src/wasm/WasmCompile.h b/js/src/wasm/WasmCompile.h
 --- a/js/src/wasm/WasmCompile.h
 +++ b/js/src/wasm/WasmCompile.h
@@ -1467,17 +1545,17 @@ new file mode 100644
 +    return cx->task->debugEnabled();
 +}
 +
-+BD_Emitter*
++const BD_Emitter*
 +cx_emitter(const BD_WasmContext* cx_)
 +{
 +    const WasmContext* cx = reinterpret_cast<const WasmContext*>(cx_);
-+    return reinterpret_cast<BD_Emitter*>(cx->emitter);
++    return reinterpret_cast<const BD_Emitter*>(cx->emitter);
 +}
 +
 +// Emitter
 +
 +bool
-+emitter_appendBytes(BD_Emitter* em_, const uint8_t* begin, uint32_t count)
++emitter_appendBytes(const BD_Emitter* em_, const uint8_t* begin, uint32_t count)
 +{
 +#ifdef DEBUG
 +    // FIXME
@@ -1487,35 +1565,35 @@ new file mode 100644
 +    fprintf(stderr, "\n");
 +#endif
 +
-+    Emitter* em = reinterpret_cast<Emitter*>(em_);
++    const Emitter* em = reinterpret_cast<const Emitter*>(em_);
 +    return em->masm->appendBytes(begin, count);
 +}
 +
 +void
-+emitter_setBeginOffset(BD_Emitter* em_, uint32_t offset)
++emitter_setBeginOffset(const BD_Emitter* em_, uint32_t offset)
 +{
-+    Emitter* em = reinterpret_cast<Emitter*>(em_);
++    Emitter* em = const_cast<Emitter*>(reinterpret_cast<const Emitter*>(em_));
 +    em->offsets.begin = offset;
 +}
 +
 +void
-+emitter_setEndOffset(BD_Emitter* em_, uint32_t offset)
++emitter_setEndOffset(const BD_Emitter* em_, uint32_t offset)
 +{
-+    Emitter* em = reinterpret_cast<Emitter*>(em_);
++    Emitter* em = const_cast<Emitter*>(reinterpret_cast<const Emitter*>(em_));
 +    em->offsets.end = offset;
 +}
 +
 +void
-+emitter_setRetOffset(BD_Emitter* em_, uint32_t offset)
++emitter_setRetOffset(const BD_Emitter* em_, uint32_t offset)
 +{
-+    Emitter* em = reinterpret_cast<Emitter*>(em_);
++    Emitter* em = const_cast<Emitter*>(reinterpret_cast<const Emitter*>(em_));
 +    em->offsets.ret = offset;
 +}
 +
 +void
-+emitter_setNormalEntryOffset(BD_Emitter* em_, uint32_t offset)
++emitter_setNormalEntryOffset(const BD_Emitter* em_, uint32_t offset)
 +{
-+    Emitter* em = reinterpret_cast<Emitter*>(em_);
++    Emitter* em = const_cast<Emitter*>(reinterpret_cast<const Emitter*>(em_));
 +    em->offsets.normalEntry = offset;
 +}
 +
