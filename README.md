@@ -1,7 +1,7 @@
 # baldrdash
 Some initial patches for hooking Cretonne into spidermonkey.
 
-The file `baldrdash.patch` should apply to a mozilla-inbound checkout (currently mercurial rev 368041:9f61b0a0397e).  It provides:
+The file `baldrdash.patch` should apply to a mozilla-inbound checkout (currently mercurial rev 376068:b0142c177ac0), and `cretin.patch` should apply on top of that again.  Together they provide:
 
 
 - New files `js/src/wasm/WasmCretonneCompile.{cpp,h}` which define the function `js::wasm::CretonneCompileFunction`. This has the same API as `js::wasm::IonCompileFunction` and `js::wasm::BaselineCompileFunction`. This new function is the entry point for the Rust backend based on Cretonne.  It sets up a compilation context and calls into rust to compile a single Wasm function.
