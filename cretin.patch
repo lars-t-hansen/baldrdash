@@ -1,0 +1,282 @@
+# HG changeset patch
+# User Lars T Hansen <lhansen@mozilla.com>
+# Date 1499740628 25200
+#      Mon Jul 10 19:37:08 2017 -0700
+# Node ID c7b26d49a96e6c4c938d50467b41fb5cb4b2454b
+# Parent  95f930fede6841ad244b0fb8e3609a6e80e94753
+The Cretin sample compiler
+
+diff --git a/js/src/baldrdash/src/cretin.rs b/js/src/baldrdash/src/cretin.rs
+--- a/js/src/baldrdash/src/cretin.rs
++++ b/js/src/baldrdash/src/cretin.rs
+@@ -29,93 +29,202 @@ use baldrdash::*;
+ 
+ pub type Res = Result<(),()>;
+ 
+-pub fn compile(cx:WasmContext) -> Res {
+-    let mut emitter = cx.emitter();
+-    let mut offs = 0;
++// Input buffer abstraction
++
++struct Input<'a> {
++    buf: &'a [u8],
++    ptr: usize
++}
++
++impl<'a> Input<'a>
++{
++    fn new(buf:&'a [u8]) -> Input<'a> {
++        Input { buf: buf, ptr: 0 }
++    }
++
++    fn at_end(&self) -> bool {
++        self.ptr == self.buf.len()
++    }
++
++    fn read_op(&mut self) -> u32 {
++        let v = self.buf[self.ptr];
++        self.ptr += 1;
++        v as u32
++    }
++
++    fn read_var_u32(&mut self) -> u32 {
++        let mut value: u32 = 0;
++        let mut shift = 0;
++        loop {
++            let v = self.buf[self.ptr] as u32;
++            self.ptr += 1;
++            value = value | ((v & 127) << shift);
++            if v <= 127 {
++                return value;
++            }
++            shift += 7;
++        }
++    }
++
++    fn read_var_i32(&mut self) -> i32 {
++        self.read_var_u32() as i32
++    }
++}
++
++// Output buffer abstraction
++
++const BUFSIZ: usize = 4096;
++
++struct Output<'a> {
++    buf: [u8; BUFSIZ],
++    ptr: usize,
++    oom: bool,
++    em: &'a Emitter
++}
++
++impl<'a> Output<'a>
++{
++    fn new(em:&'a Emitter) -> Output<'a> {
++        Output { buf: [0u8; BUFSIZ],
++                 ptr: 0,
++                 oom: false,
++                 em:  em }
++    }
++
++    fn current_offset(&self) -> u32 {
++        self.ptr as u32
++    }
++
++    fn put(&mut self, c:u8) {
++        if self.ptr == BUFSIZ {
++            self.flush();
++        }
++        self.buf[self.ptr] = c;
++        self.ptr += 1;
++    }
+ 
+-    emitter.set_begin_offset(offs);            // Begin offset before anything
++    fn put_imm32(&mut self, val:i32) {
++        let mut v = val as u32;
++        for i in 0..4 {
++            self.put((v & 255) as u8);
++            v = v >> 8;
++        }
++    }
++
++    fn flush(&mut self) {
++        match self.em.append_bytes(&self.buf[0..self.ptr]) {
++            Ok(_) => (),
++            Err(_) => self.oom = true
++        }
++        self.ptr = 0;
++    }
++
++    fn oom_test(&mut self) -> Res {
++        match self.oom {
++            false => Ok(()),
++            true => Err(())
++        }
++    }
++}
++
++// Compiler abstraction
++
++struct Cretin<'a> {
++    input: Input<'a>,
++    out: Output<'a>
++}
++
++impl<'a> Cretin<'a>
++{
++    fn new(input:Input<'a>, out:Output<'a>) -> Cretin<'a> {
++        Cretin { input: input, out: out }
++    }
+ 
+-    // Prologue(s)
++    fn finish(&mut self) -> Res {
++        self.out.flush();
++        assert!(self.input.at_end(), "Expected end of input");
++        self.out.oom_test()
++    }
++
++    fn emit_end(&mut self) {
++    }
++
++    fn do_return(&mut self) {
++        self.out.put(0xC3);                                 // RET
++    }
++
++    fn emit_i32const(&mut self) {
++        self.out.put(0xB8);                                 // MOV EAX, Imm32
++        self.out.put_imm32(self.input.read_var_i32());
++    }
++
++    fn current_offset(&mut self) -> u32 {
++        self.out.current_offset()
++    }
+ 
+-    emitter.set_normal_entry_offset(offs);     // Normal-entry offset after the profiling prologue
++    fn read_op(&mut self) -> u32 {
++        self.input.read_op()
++    }
++
++    fn read_var_u32(&mut self) -> u32 {
++        self.input.read_var_u32()
++    }
++}
++
++// Opcodes
++
++const END      : u32 = 0x0B;
++const I32CONST : u32 = 0x41;
++
++// Compiler
++
++pub fn compile(cx:WasmContext) -> Res {
++    let func = cx.func_bytes();
++    let input = Input::new(func.bytes());
++
++    let emitter = cx.emitter();
++    let out = Output::new(&emitter);
++
++    let mut f = Cretin::new(input, out);
+ 
+     // A completely ad-hoc parser.  There must be no parameters or
+     // locals; the function's body must be a single i32 expression;
+     // there must be no explicit return.
+ 
+-    let func = cx.func_bytes();
+-    let bytes = func.bytes();
+-    let input = 0;
++    emitter.set_begin_offset(f.current_offset());          // Begin offset before anything
++
++    // Prologue(s)
++
++    emitter.set_normal_entry_offset(f.current_offset());   // Normal-entry offset after the profiling prologue
+ 
+     // DecodeLocalEntries
+-    let (num_locals, input) = read_var_u32(bytes, input);
++
++    let num_locals = f.read_var_u32();
+     assert!(num_locals == 0, "Number of locals");
+ 
+-    const END      : u32 = 0x0B;
+-    const I32CONST : u32 = 0x41;
+-
+     // Body
+ 
+-    let (op, input) = read_op(bytes, input);
+-    let input = if op == I32CONST {
+-        let (val, input) = read_var_i32(bytes, input);
+-        let mut code = vec![0xB8];             // MOV eax, imm32
+-        let mut v = val as u32;
+-        for i in 0..4 {
+-            code.push((v & 255) as u8);
+-            v = v >> 8;
++    loop {
++        match f.read_op() {
++            END => {
++                f.emit_end();
++                break;
++            }
++            I32CONST => {
++                f.emit_i32const();
++            }
++            _ => {
++                panic!("Unrecognized opcode");
++            }
+         }
+-        try!(emitter.append_bytes(&code));
+-        offs += code.len() as u32;
+-        input
+-    } else {
+-        panic!("Unexpected opcode: expected i32const")
+-    };
+-
+-    let (op, input) = read_op(bytes, input);
+-    if op == END {
+-        assert!(input as usize == bytes.len(), "Number of operations");
+-    } else {
+-        panic!("Unexpected opcode: expected end");
+     }
+ 
+     // Return
+ 
+-    emitter.set_ret_offset(offs);              // Return offset right before return instruction
+-    let ret = [0xC3];                          // RET
+-    try!(emitter.append_bytes(&ret));
+-    offs += ret.len() as u32;
+-
+-    emitter.set_end_offset(offs);              // End offset after everything
+-
+-    Ok(())
+-}
+-
+-fn read_op(bytes:&[u8], loc:u32) -> (u32, u32) {
+-    let v = bytes[loc as usize];
+-    let loc = loc + 1;
+-    (v as u32, loc)
+-}
++    emitter.set_ret_offset(f.current_offset());  // Return offset right before return instruction
++    f.do_return();
+ 
+-fn read_var_u32(bytes:&[u8], loc:u32) -> (u32, u32) {
+-    let v = bytes[loc as usize];
+-    let loc = loc + 1;
+-    assert!(v < 127);
+-    (v as u32, loc)
+-}
++    emitter.set_end_offset(f.current_offset());  // End offset after everything
+ 
+-fn read_var_i32(bytes:&[u8], mut loc:u32) -> (i32, u32) {
+-    let mut value: u32 = 0;
+-    let mut i = 0;
+-    loop {
+-        let v = bytes[loc as usize] as u32;
+-        loc += 1;
+-        value = value | ((v & 127) << i);
+-        i += 7;
+-        println!("{}", v);
+-        if v <= 127 {
+-            break;
+-        }
+-    }
+-    (value as i32, loc)
++    f.finish()
+ }
