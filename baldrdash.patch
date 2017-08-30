@@ -2,8 +2,8 @@
 # User Lars T Hansen <lhansen@mozilla.com>
 # Date 1499384022 25200
 #      Thu Jul 06 16:33:42 2017 -0700
-# Node ID 95f930fede6841ad244b0fb8e3609a6e80e94753
-# Parent  b0142c177ac0d9577cd0c5da75069e57272a0f7d
+# Node ID 5fdb05cbbc6139a018a813712c1b1c6841f53c35
+# Parent  02b9376bea86bd86e86d1747509e6660af545928
 Baldrdash compilation framework
 
 diff --git a/.hgignore b/.hgignore
@@ -1065,7 +1065,7 @@ diff --git a/js/src/jit/x86-shared/BaseAssembler-x86-shared.h b/js/src/jit/x86-s
 diff --git a/js/src/jsapi-tests/moz.build b/js/src/jsapi-tests/moz.build
 --- a/js/src/jsapi-tests/moz.build
 +++ b/js/src/jsapi-tests/moz.build
-@@ -146,6 +146,8 @@ USE_LIBS += [
+@@ -145,6 +145,8 @@ USE_LIBS += [
      'static:js',
  ]
  
@@ -1077,7 +1077,7 @@ diff --git a/js/src/jsapi-tests/moz.build b/js/src/jsapi-tests/moz.build
 diff --git a/js/src/jsapi.h b/js/src/jsapi.h
 --- a/js/src/jsapi.h
 +++ b/js/src/jsapi.h
-@@ -1152,6 +1152,7 @@ class JS_PUBLIC_API(ContextOptions) {
+@@ -1148,6 +1148,7 @@ class JS_PUBLIC_API(ContextOptions) {
          wasm_(false),
          wasmBaseline_(false),
          wasmIon_(false),
@@ -1085,7 +1085,7 @@ diff --git a/js/src/jsapi.h b/js/src/jsapi.h
          throwOnAsmJSValidationFailure_(false),
          nativeRegExp_(true),
          unboxedArrays_(false),
-@@ -1235,6 +1236,16 @@ class JS_PUBLIC_API(ContextOptions) {
+@@ -1231,6 +1232,16 @@ class JS_PUBLIC_API(ContextOptions) {
          return *this;
      }
  
@@ -1102,7 +1102,7 @@ diff --git a/js/src/jsapi.h b/js/src/jsapi.h
      bool throwOnAsmJSValidationFailure() const { return throwOnAsmJSValidationFailure_; }
      ContextOptions& setThrowOnAsmJSValidationFailure(bool flag) {
          throwOnAsmJSValidationFailure_ = flag;
-@@ -1326,6 +1337,7 @@ class JS_PUBLIC_API(ContextOptions) {
+@@ -1322,6 +1333,7 @@ class JS_PUBLIC_API(ContextOptions) {
      bool wasm_ : 1;
      bool wasmBaseline_ : 1;
      bool wasmIon_ : 1;
@@ -1141,7 +1141,7 @@ diff --git a/js/src/shell/js.cpp b/js/src/shell/js.cpp
  static bool enableAsyncStacks = false;
  static bool enableStreams = false;
  #ifdef JS_GC_ZEAL
-@@ -7814,6 +7815,7 @@ SetContextOptions(JSContext* cx, const O
+@@ -7842,6 +7843,7 @@ SetContextOptions(JSContext* cx, const O
      enableUnboxedArrays = op.getBoolOption("unboxed-arrays");
      enableWasmBaseline = !op.getBoolOption("no-wasm-baseline");
      enableWasmIon = !op.getBoolOption("no-wasm-ion");
@@ -1149,7 +1149,7 @@ diff --git a/js/src/shell/js.cpp b/js/src/shell/js.cpp
      enableAsyncStacks = !op.getBoolOption("no-async-stacks");
      enableStreams = op.getBoolOption("enable-streams");
  
-@@ -7823,6 +7825,7 @@ SetContextOptions(JSContext* cx, const O
+@@ -7851,6 +7853,7 @@ SetContextOptions(JSContext* cx, const O
                               .setWasm(enableWasm)
                               .setWasmBaseline(enableWasmBaseline)
                               .setWasmIon(enableWasmIon)
@@ -1157,7 +1157,7 @@ diff --git a/js/src/shell/js.cpp b/js/src/shell/js.cpp
                               .setNativeRegExp(enableNativeRegExp)
                               .setUnboxedArrays(enableUnboxedArrays)
                               .setAsyncStack(enableAsyncStacks)
-@@ -8110,6 +8113,7 @@ SetWorkerContextOptions(JSContext* cx)
+@@ -8138,6 +8141,7 @@ SetWorkerContextOptions(JSContext* cx)
                               .setWasm(enableWasm)
                               .setWasmBaseline(enableWasmBaseline)
                               .setWasmIon(enableWasmIon)
@@ -1165,7 +1165,7 @@ diff --git a/js/src/shell/js.cpp b/js/src/shell/js.cpp
                               .setNativeRegExp(enableNativeRegExp)
                               .setUnboxedArrays(enableUnboxedArrays)
                               .setStreams(enableStreams);
-@@ -8310,6 +8314,7 @@ main(int argc, char** argv, char** envp)
+@@ -8338,6 +8342,7 @@ main(int argc, char** argv, char** envp)
          || !op.addBoolOption('\0', "no-native-regexp", "Disable native regexp compilation")
          || !op.addBoolOption('\0', "no-unboxed-objects", "Disable creating unboxed plain objects")
          || !op.addBoolOption('\0', "unboxed-arrays", "Allow creating unboxed arrays")
@@ -1195,10 +1195,10 @@ diff --git a/js/src/wasm/WasmCompile.cpp b/js/src/wasm/WasmCompile.cpp
  
      // Debug information such as source view or debug traps will require
      // additional memory and permanently stay in baseline code, so we try to
-@@ -234,6 +235,12 @@ wasm::Compile(const ShareableBytes& byte
+@@ -209,6 +210,12 @@ Compile(ModuleGenerator& mg, const Share
+ SharedModule
+ wasm::CompileInitialTier(const ShareableBytes& bytecode, const CompileArgs& args, UniqueChars* error)
  {
-     MOZ_RELEASE_ASSERT(wasm::HaveSignalHandlers());
- 
 +    // At the moment, Cretonne performs no validation, so validate explicitly.
 +    if (args.alwaysCretonne) {
 +        if (!Validate(bytecode, error))
@@ -1693,7 +1693,7 @@ diff --git a/js/src/wasm/WasmGenerator.cpp b/js/src/wasm/WasmGenerator.cpp
  #include "wasm/WasmStubs.h"
  
 @@ -50,6 +51,7 @@ ModuleGenerator::ModuleGenerator(UniqueC
-     compileMode_(CompileMode::Once),
+     tier_(Tier(-1)),
      error_(error),
      cancelled_(cancelled),
 +    cretonneEnabled_(false),
@@ -1708,7 +1708,7 @@ diff --git a/js/src/wasm/WasmGenerator.cpp b/js/src/wasm/WasmGenerator.cpp
  
      auto metadataTier = js::MakeUnique<MetadataTier>(tier_);
      if (!metadataTier)
-@@ -959,6 +962,7 @@ ModuleGenerator::launchBatchCompile()
+@@ -960,6 +963,7 @@ ModuleGenerator::launchBatchCompile()
          return false;
  
      currentTask_->setDebugEnabled(metadata_->debugEnabled);
@@ -1716,7 +1716,7 @@ diff --git a/js/src/wasm/WasmGenerator.cpp b/js/src/wasm/WasmGenerator.cpp
  
      size_t numBatchedFuncs = currentTask_->units().length();
      MOZ_ASSERT(numBatchedFuncs);
-@@ -1331,8 +1335,13 @@ wasm::CompileFunction(CompileTask* task,
+@@ -1321,8 +1325,13 @@ wasm::CompileFunction(CompileTask* task,
      switch (task->tier()) {
        case Tier::Ion:
          for (FuncCompileUnit& unit : task->units()) {
@@ -1764,10 +1764,10 @@ diff --git a/js/src/wasm/WasmGenerator.h b/js/src/wasm/WasmGenerator.h
      bool reset(UniqueFuncBytesVector* freeFuncBytes) {
          for (FuncCompileUnit& unit : units_) {
              if (!freeFuncBytes->emplaceBack(Move(unit.recycle())))
-@@ -221,6 +229,7 @@ class MOZ_STACK_CLASS ModuleGenerator
-     CompileMode                     compileMode_;
+@@ -222,6 +230,7 @@ class MOZ_STACK_CLASS ModuleGenerator
+     Tier                            tier_;
      UniqueChars*                    error_;
-     mozilla::Atomic<bool>*          cancelled_;
+     Atomic<bool>*                   cancelled_;
 +    bool                            cretonneEnabled_;
  
      // Data that is moved into the result of finish()
